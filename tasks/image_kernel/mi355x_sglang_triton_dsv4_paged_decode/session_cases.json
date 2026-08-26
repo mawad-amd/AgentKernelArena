@@ -1,0 +1,49 @@
+{
+  "source_day": "2026-08-26",
+  "date_field": "rocprofv3_kernel_trace + model_config",
+  "platform": "MI355X/gfx950",
+  "framework": "sglang 0.5.18.dev20260825+g0c7ff19e3b",
+  "base_image": "rocm/sgl-dev:v0.5.18-rocm720-mi35x-20260825",
+  "model": "DeepSeek-V4-Flash (deepseek-ai/DeepSeek-V4-Flash, fp4 experts)",
+  "operator": "dsv4_paged_decode",
+  "kernel": "_paged_decode_split_kernel + _paged_decode_reduce_kernel",
+  "timed_callable": "sparse_attn_v4_paged_decode",
+  "task_name": "mi355x-sg-dsv4-paged-decode",
+  "profile_case": "c4-decode",
+  "selection": "attention-compression layer classes; all three classes present in every forward",
+  "provenance": "Shapes from config.json of the live checkpoint (hidden 4096, num_attention_heads 64, head_dim 512, num_key_value_heads 1, index_topk 512, sliding_window 128, compress_ratios) cross-checked against a rocprofv3 kernel trace on MI355X: 2666 split dispatches over 62 decode steps = 43/token, splitting 22/21 by VGPR class. Case counts are the compression partition: 21 C4 (compress_ratios==4), 20 C128 (==128), 2 ratio-0 (indices 0 and 1). NOT the routing partition (num_hash_layers=3 -> layers 0,1,2); layer 2 is hash-routed AND C4.",
+  "geometry_aggregation_key": "grid(x,y,z) + workgroup(x,y,z) + VGPR + Accum_VGPR + SGPR + LDS + Scratch",
+  "observed_geometry": {
+    "note": "rocprofv3 Grid_Size is WORK-ITEMS, not workgroups. grid_split = (T, n_head_blocks, kv_splits).",
+    "split": "work-items (512,1,64) wg=512 -> 64 workgroups on 256 CUs; two VGPR classes 124 and 108, SGPR 64 both",
+    "reduce": "work-items (256,64,8) wg=256 -> 512 workgroups; single class, vgpr=16",
+    "context_invariance": "grid, VGPR and the 22:21 per-token class ratio are byte-identical at 128, 1024 and 16384 prefill tokens"
+  },
+  "physics": "kv_splits is capped at _MAX_KV_SPLITS=64 while the kernel's own heuristic computes a device-fill target of 2 WG/CU = 512 workgroups. Measured on MI355X (ABBA, rocprofv3, GPU time of split+reduce): raising kv_splits 64 -> 256 costs +3.1% on split and +30.2% on reduce, net +10.1% worse at short K. The cap is real, not an oversight.",
+  "cases": [
+    {
+      "id": "c4-decode",
+      "family": "compression_class_c4",
+      "regime": "decode",
+      "layer_class": "c4",
+      "layer_indices": "compress_ratios == 4 (21 layers)",
+      "params": {"t": 1, "h": 64, "d": 512, "kv_len": 640, "page_size": 1, "max_relerr": 0.04}
+    },
+    {
+      "id": "c128-decode",
+      "family": "compression_class_c128",
+      "regime": "decode",
+      "layer_class": "c128",
+      "layer_indices": "compress_ratios == 128 (20 layers)",
+      "params": {"t": 1, "h": 64, "d": 512, "kv_len": 281, "page_size": 1, "max_relerr": 0.04}
+    },
+    {
+      "id": "swa-decode",
+      "family": "compression_class_ratio0",
+      "regime": "decode",
+      "layer_class": "swa",
+      "layer_indices": "compress_ratios == 0 (layers 0 and 1)",
+      "params": {"t": 1, "h": 64, "d": 512, "kv_len": 128, "page_size": 1, "max_relerr": 0.04}
+    }
+  ]
+}

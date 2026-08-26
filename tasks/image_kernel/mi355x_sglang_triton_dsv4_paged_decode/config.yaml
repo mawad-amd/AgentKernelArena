@@ -1,0 +1,45 @@
+task_type: image_kernel
+image_repo_path: /sgl-workspace/sglang/python/sglang
+repo_subdir: sglang
+repository_language: triton
+source_file_path:
+  - kernels/ops/attention/dsv4/unified_kv_kernels/paged_decode.py
+target_kernel_functions:
+  - _paged_decode_split_kernel
+  - _paged_decode_reduce_kernel
+  - _sparse_attn_v4_paged_decode_triton
+kernel_identity:
+  logical_operator: dsv4_paged_decode
+  kernel_kind: triton
+  source_owner: sglang
+  workload:
+    source: session_cases.json
+    primary_case: c4-decode
+compile_command:
+  - python3 scripts/task_runner.py compile
+correctness_command:
+  - python3 scripts/task_runner.py correctness
+performance_command:
+  - python3 scripts/task_runner.py performance
+compile_timeout: 1800
+correctness_timeout: 1800
+performance_timeout: 1800
+task_result_template: null
+prompt:
+  source_code: null
+  instructions: >-
+    Optimize the SGLang DeepSeek-V4 unified-KV paged decode attention on MI355X/gfx950:
+    the split-K kernel _paged_decode_split_kernel, the combining kernel
+    _paged_decode_reduce_kernel, and their launcher _sparse_attn_v4_paged_decode_triton in
+    kernels/ops/attention/dsv4/unified_kv_kernels/paged_decode.py. This is the decode
+    attention AMD's nightly CI actually runs (SGLANG_HACK_FLASHMLA_BACKEND=unified_kv_triton).
+    The three cases are the three DeepSeek-V4-Flash attention-compression layer classes and
+    differ only in attended KV length: c4 640, c128 281, swa 128. MQA -- num_key_value_heads
+    is 1, so unified_kv is both K and V. attn_sink is a per-head logit with a zero value
+    vector; it removes mass from the softmax denominator only. Batch is 1, so the split
+    kernel launches 64 workgroups on 256 CUs; the base grid without split-K would be a
+    single workgroup. Two constraints before you change kv_splits: the heuristic is
+    deliberately CUDAGraph-safe and must not read any tensor value or shape, and raising
+    kv_splits from 64 to 256 was measured at +3.1% on split, +30.2% on reduce, net +10.1%
+    worse -- the cap is priced, not overlooked. Preserve all correctness cases.
+  cheatsheet: null
