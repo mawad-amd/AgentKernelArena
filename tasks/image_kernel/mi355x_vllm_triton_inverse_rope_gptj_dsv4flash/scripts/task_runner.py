@@ -31,15 +31,6 @@ EDIT_MODULE_NAME = "vllm.v1.attention.ops._ka_rocm_aiter_mla_sparse"
 def _configure() -> None:
     for key in ("GPU_ARCHS", "PYTORCH_ROCM_ARCH", "AMDGPU_TARGETS", "GPU_TARGETS"):
         os.environ.setdefault(key, "gfx950")
-    # The injected benchmark helpers do `from _aka_benchmark import ...`, which only
-    # resolves when scripts/ happens to be on sys.path. It is when this file is run
-    # as `python3 scripts/task_runner.py`, but forge_driver loads this module by
-    # file path from the workspace root, where it is not — so bench-mode fails with
-    # a misleading `No module named 'src'` from the fallback branch. Put scripts/
-    # on the path explicitly so the entry point does not decide whether timing works.
-    scripts_dir = str(Path(__file__).resolve().parent)
-    if scripts_dir not in sys.path:
-        sys.path.insert(0, scripts_dir)
     os.chdir(WORKSPACE)
 
 

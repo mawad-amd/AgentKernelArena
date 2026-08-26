@@ -162,6 +162,34 @@ is not verified under capture.
 **rocprofv3 `Grid_Size` is work-items, not workgroups.** Divide by the workgroup size. Reading it
 as workgroups understates occupancy by 256x and hides the finding above.
 
+## Known issue — `forge --bench-mode` fails from the workspace root
+
+This task is **intentionally left unpatched** against a regression in the harness, so that it
+exhibits the bug rather than masking it.
+
+Arena's forge launcher copies `forge_driver.py` to the **workspace root** and runs it there. The
+injected benchmark helper does `from _aka_benchmark import ...`, and `_aka_benchmark.py` lives in
+`scripts/`, which is not on `sys.path` from the root. The import misses, the fallback reaches for
+`src.tools.perf.aka_benchmark` (an Arena repo path that does not exist inside a workspace), and the
+run dies with `ModuleNotFoundError: No module named 'src'`.
+
+```
+forge from scripts/       --bench-mode  RC=0
+forge at workspace root   --bench-mode  RC=1   <- the launcher's own invocation
+```
+
+Introduced by https://github.com/AMD-AGI/AgentKernelArena/pull/77, which moved the helper from code
+inlined into each `task_runner.py` into a separate importable module. **16 tasks on `main` are
+affected**, all of them predating this one. It survives because authors test from `scripts/`, the
+one location where the path is correct by accident.
+
+A per-task `sys.path` insert fixes it locally, and was deliberately **not** applied here: a task
+carrying a private workaround passes whether or not the real fix lands, which makes it useless for
+verifying that fix reached everything. The fix belongs in `src/tools/perf/vllm_cuda_graph_block.py`,
+which is injected into every task.
+
+The three `task_runner.py` modes (compile, correctness, performance) are unaffected.
+
 ## Sources
 
 - **vLLM** (Apache-2.0) — the fp8_ds_mla cache pack/unpack logic in `scripts/task_runner.py` follows
