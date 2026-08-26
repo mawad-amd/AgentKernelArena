@@ -1,0 +1,61 @@
+{
+  "source_day": "2026-08-26",
+  "date_field": "trace_captured_at",
+  "platform": "MI355X/gfx950",
+  "framework": "vllm 0.27.0",
+  "base_image": "vllm/vllm-openai-rocm:v0.27.0",
+  "selection": "rocprofv3 kernel trace of DeepSeek-V4-Flash, eager, TP=1, batch 1; the two distinct launch geometries observed for this kernel, one per regime",
+  "task_name": "mi355x-dsv4flash-inverse-rope-gptj-20260826",
+  "operator": "inverse_rope_gptj",
+  "profile_case": "dsv4-flash-prefill-t543",
+  "provenance": {
+    "model": "DeepSeek-V4-Flash",
+    "device_kernel": "_inverse_rope_gptj_kernel",
+    "entry": "vllm/v1/attention/ops/rocm_aiter_mla_sparse.py: _fused_inverse_rope_gptj",
+    "call_chain": "DeepseekV4ROCMAiterMLAAttention -> rocm_inv_rope_einsum -> _fused_inverse_rope_gptj -> _inverse_rope_gptj_kernel",
+    "how_captured": "rocprofv3 --kernel-trace --marker-trace, windowed to a roctx range around the measured generate; warmup outside; MI355X gfx950, ROCm 7.2.2, single dedicated GPU",
+    "launch_counts": "prefill 4,902 launches over 2 geometries (43 each of two shapes); decode 11,008 launches = 43 layers x 256 tokens plus 43 of a second shape",
+    "grid_note": "rocprofv3 Grid_Size is work-items. Launch is (num_tokens, num_heads) programs at 256 threads; observed work-item grids (139008,64,1) and (47104,64,1) at prefill, (256,64,1) and (4096,64,1) at decode, giving 543 / 184 / 1 / 16 tokens.",
+    "timing_caveat": "counts and geometry are from eager execution; graph-replayed decode is unobservable by rocprofv3 or Kineto."
+  },
+  "cases": [
+    {
+      "id": "dsv4-flash-prefill-t543",
+      "model": "DeepSeek-V4-Flash",
+      "regime": "prefill, bandwidth-bound",
+      "observed_workitem_grid": "(139008,64,1)",
+      "params": {
+        "num_tokens": 543,
+        "num_heads": 64,
+        "head_dim": 512,
+        "rope_head_dim": 64,
+        "max_position": 32768,
+        "dtype": "bf16"
+      },
+      "trace_input_shapes": [
+        "(543,64,512) bf16",
+        "(543,) int64",
+        "(32768,64) bf16"
+      ]
+    },
+    {
+      "id": "dsv4-flash-decode-t1",
+      "model": "DeepSeek-V4-Flash",
+      "regime": "decode, launch-bound",
+      "observed_workitem_grid": "(256,64,1)",
+      "params": {
+        "num_tokens": 1,
+        "num_heads": 64,
+        "head_dim": 512,
+        "rope_head_dim": 64,
+        "max_position": 32768,
+        "dtype": "bf16"
+      },
+      "trace_input_shapes": [
+        "(1,64,512) bf16",
+        "(1,) int64",
+        "(32768,64) bf16"
+      ]
+    }
+  ]
+}

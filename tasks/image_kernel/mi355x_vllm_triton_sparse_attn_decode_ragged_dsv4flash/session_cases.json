@@ -1,0 +1,104 @@
+{
+  "source_day": "2026-08-26",
+  "date_field": "trace_captured_at",
+  "platform": "MI355X/gfx950",
+  "framework": "vllm 0.27.0",
+  "base_image": "vllm/vllm-openai-rocm:v0.27.0",
+  "selection": "rocprofv3 kernel trace of DeepSeek-V4-Flash decode, eager, TP=1, batch 1; cases are the three dispatched layer classes distinguished by launch geometry under the full aggregation key",
+  "task_name": "mi355x-dsv4flash-sparse-attn-decode-ragged-20260826",
+  "operator": "sparse_attn_decode_ragged",
+  "profile_case": "dsv4-flash-decode-c4-topk512",
+  "provenance": {
+    "model": "DeepSeek-V4-Flash",
+    "device_kernel": "_sparse_attn_decode_partial_kernel + _sparse_attn_decode_reduce_kernel",
+    "entry": "vllm/v1/attention/ops/rocm_aiter_mla_sparse.py: _rocm_sparse_attn_decode_ragged_triton",
+    "call_chain": "DeepseekV4ROCMAiterMLAAttention._forward_decode -> rocm_sparse_attn_decode -> _rocm_sparse_attn_decode_ragged_triton -> partial + reduce",
+    "how_captured": "rocprofv3 --kernel-trace --marker-trace, windowed to a roctx range around the measured generate; warmup outside the window; 255 generated tokens; MI355X gfx950, ROCm 7.2.2, single dedicated GPU",
+    "aggregation_key": "grid(x,y,z) + workgroup(x,y,z) + VGPR + Accum_VGPR + SGPR + LDS + Scratch",
+    "validity_check": "dispatches per class divide to exact integers per token: 21.00 / 20.00 / 2.00, summing to the 43 layers",
+    "layer_taxonomy": "compress_ratios over 43 layers gives 21 at ratio 4 (indexed, top-512), 20 at ratio 128 (compressed cache), 2 at ratio 0 (layers 0 and 1, sliding window). Confirmed independently by indexer-GEMM launch count, _inverse_rope_gptj_kernel counts, and these geometries.",
+    "attended_token_bound": "index_topk=512 caps C4 layers at 512 attended tokens at ANY context length; C128 layers see ceil(ctx/128); sliding_window=128 bounds the residual layers. Long context does not produce long K in this model.",
+    "grid_note": "rocprofv3 Grid_Size is work-items. grid=(num_queries, num_splits, heads_blocks) in workgroups; observed num_splits 16/8/4 and heads_blocks 4.",
+    "timing_caveat": "decode_gpu_share_eager values below are shares of summed GPU time over decode-phase kernels under eager execution, NOT Arena gpu_pct and NOT comparable to Hyperloom production percentages. Graph-replayed decode is unobservable by rocprofv3 (aborts or degrades) and by Kineto (cannot see into a replay), so eager is the only observable regime."
+  },
+  "cases": [
+    {
+      "id": "dsv4-flash-decode-c4-topk512",
+      "model": "DeepSeek-V4-Flash",
+      "layer_class": "c4_indexed",
+      "layer_indices": "21 of 43 layers at compress_ratio 4",
+      "dispatches_per_token": 21,
+      "observed_num_splits": 16,
+      "observed_vgpr_partial": 176,
+      "decode_gpu_share_eager": 5.27,
+      "params": {
+        "num_queries": 1,
+        "num_heads": 64,
+        "nope_head_dim": 448,
+        "rope_head_dim": 64,
+        "num_kv": 4096,
+        "topk": 512,
+        "block_size": 64,
+        "dtype": "bf16"
+      },
+      "trace_input_shapes": [
+        "(1,64,512) bf16",
+        "(64,64,584) uint8",
+        "(512,) int32",
+        "(2,) int32"
+      ]
+    },
+    {
+      "id": "dsv4-flash-decode-c128-compressed",
+      "model": "DeepSeek-V4-Flash",
+      "layer_class": "c128_compressed",
+      "layer_indices": "20 of 43 layers at compress_ratio 128",
+      "dispatches_per_token": 20,
+      "observed_num_splits": 8,
+      "observed_vgpr_partial": 176,
+      "decode_gpu_share_eager": 5.27,
+      "params": {
+        "num_queries": 1,
+        "num_heads": 64,
+        "nope_head_dim": 448,
+        "rope_head_dim": 64,
+        "num_kv": 256,
+        "topk": 154,
+        "block_size": 64,
+        "dtype": "bf16"
+      },
+      "trace_input_shapes": [
+        "(1,64,512) bf16",
+        "(4,64,584) uint8",
+        "(154,) int32",
+        "(2,) int32"
+      ]
+    },
+    {
+      "id": "dsv4-flash-decode-swa-window128",
+      "model": "DeepSeek-V4-Flash",
+      "layer_class": "residual_sliding_window",
+      "layer_indices": "layers 0 and 1, compress_ratio 0",
+      "dispatches_per_token": 2,
+      "observed_num_splits": 4,
+      "observed_vgpr_partial": 168,
+      "decode_gpu_share_eager": 5.27,
+      "params": {
+        "num_queries": 1,
+        "num_heads": 64,
+        "nope_head_dim": 448,
+        "rope_head_dim": 64,
+        "num_kv": 128,
+        "topk": 128,
+        "block_size": 64,
+        "dtype": "bf16"
+      },
+      "trace_input_shapes": [
+        "(1,64,512) bf16",
+        "(2,64,584) uint8",
+        "(128,) int32",
+        "(2,) int32"
+      ]
+    }
+  ]
+}

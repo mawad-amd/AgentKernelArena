@@ -1,0 +1,42 @@
+task_type: image_kernel
+image_repo_path: /usr/local/lib/python3.12/dist-packages/vllm/v1/attention/ops
+repo_subdir: vllm_v1_attention_ops
+image_repo_exclude:
+- __pycache__
+repository_language: triton
+source_file_path:
+- rocm_aiter_mla_sparse.py
+target_kernel_functions:
+- _sparse_attn_decode_partial_kernel
+- _sparse_attn_decode_reduce_kernel
+kernel_identity:
+  logical_operator: sparse_attn_decode_ragged
+  kernel_kind: triton
+  source_owner: vllm
+  workload:
+    source: session_cases.json
+    primary_case: dsv4-flash-decode-c4-topk512
+compile_command:
+- python3 scripts/task_runner.py compile
+correctness_command:
+- python3 scripts/task_runner.py correctness
+performance_command:
+- python3 scripts/task_runner.py performance
+task_result_template: null
+prompt:
+  source_code: null
+  instructions: Optimize the Triton split-KV sparse-attention decode pair
+    _sparse_attn_decode_partial_kernel and _sparse_attn_decode_reduce_kernel (in
+    rocm_aiter_mla_sparse.py) on MI355X/gfx950. This is DeepSeek-V4-Flash sparse MLA
+    decode - one query token per sequence attends to a top-k selected set of
+    MLA-latent KV positions supplied in ragged CSR form over an fp8_ds_mla paged
+    cache (576 bytes/token = 448 NoPE fp8 + 64 RoPE bf16, plus 7 e8m0 group scales).
+    The latent serves as both K and V. The partial kernel computes per-split
+    softmax statistics and the reduce kernel combines them; both are scored, so a
+    change that moves work between them is fair as long as the pair stays correct.
+    The three cases are the three layer classes measured on real V4-Flash decode
+    (see README) - they differ in the number of attended tokens and therefore in
+    the split count the heuristic selects, so a change that helps one may regress
+    another. Preserve all correctness cases and improve CUDA-graph measured
+    performance. Do not change the signature of _rocm_sparse_attn_decode_ragged_triton.
+  cheatsheet: null
